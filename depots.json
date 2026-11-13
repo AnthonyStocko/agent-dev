@@ -86,5 +86,22 @@
       "supabase/rollbacks/"
     ],
     "attendre_ci": true
+  },
+  "agent-devops-perso": {
+    "depot": "AnthonyStocko/agent-devops-perso",
+    "nom": "Agent devops",
+    "installation": [
+      "if [ -f requirements.txt ]; then pip install -q -r requirements.txt; fi"
+    ],
+    "verifications": [
+      "python -m compileall -q .",
+      "if ls test_*.py >/dev/null 2>&1; then python -m unittest discover -p 'test_*.py'; fi",
+      "if [ -f app.py ]; then python \"$DEV_OUTILS/demarrage.py\" 8796 python app.py 8796; fi"
+    ],
+    "interdits": [
+      ".github/"
+    ],
+    "relecture": [],
+    "attendre_ci": false
   }
 }

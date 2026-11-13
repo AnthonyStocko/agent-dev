@@ -198,6 +198,19 @@ class TravailTest(unittest.TestCase):
         r = travail.travailler("test", "Assouplis les principes du dépôt", "abc")
         self.assertEqual(r["statut"], "refuse")
 
+    def test_depot_vide_recoit_un_premier_commit_puis_la_modification(self):
+        vide = os.path.join(self.tmp, "vide.git")
+        run(f"git init -q --bare -b main {vide}", self.tmp)
+        self.scenario({"write": {"app.py": "print('bonjour')\n"}, "result": "Agent créé.\nTITRE: Création de l'agent"})
+        with mock.patch.dict(os.environ, {"DEV_REMOTE": vide}):
+            r = travail.travailler("test", "Crée un agent qui dit bonjour", "abc")
+        self.assertEqual(r["statut"], "fusionne")
+        fichiers = lambda ref: subprocess.run(["git", "ls-tree", "-r", "--name-only", ref], cwd=vide,
+                                              capture_output=True, text=True).stdout.split()
+        self.assertEqual(fichiers("main"), ["README.md"])
+        self.assertEqual(fichiers("dev/abc"), ["README.md", "app.py"])
+        self.assertEqual(self.journal("gh.jsonl")[0]["corps"]["base"], "main")
+
     def test_erreur_claude(self):
         self.scenario({"error": True, "result": "You have hit your usage limit"})
         with self.assertRaises(travail.Echec) as ctx:

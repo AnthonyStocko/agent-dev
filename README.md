@@ -27,12 +27,15 @@ Réglés dans `depots.json` :
 | agent-manager | compilation, tests s'il y en a, démarrage du serveur | `.github/` | — |
 | mon-guide-agent-instagram | `verifier-principes.mjs`, puis la CI du dépôt | `.github/`, `CLAUDE.md`, `PRINCIPES.md`, `verifier-principes.mjs` | migrations Supabase |
 | Monguide | `npm test`, puis les workflows du dépôt | `.github/` | migrations et rollbacks Supabase |
+| agent-devops-perso | compilation, tests s'il y en a, démarrage du serveur s'il y a un `app.py` | `.github/` | — |
 
 - Un travail qui touche un chemin « jamais modifié » est rejeté en entier : rien n'est poussé.
 - Vérifications en échec : la pull request reste ouverte, préfixée « [tests en échec] », rien n'est fusionné.
 - agent-emploi n'a pas encore de tests : « vert » y veut seulement dire que le code compile et que
   le serveur démarre. L'agent a pour consigne d'ajouter des tests à chaque modification.
 - Cet agent ne se modifie pas lui-même : agent-dev n'est pas dans la liste.
+- Un dépôt encore vide reçoit d'abord un premier commit sur `main` (un README d'une ligne), puis la
+  demande est traitée comme les autres.
 - Une seule demande à la fois par dépôt ; les suivantes attendent.
 - Claude Code ne reçoit ni le jeton GitHub ni `HUB_TOKEN` : il ne peut ni pousser ni fusionner lui-même.
 
@@ -42,7 +45,7 @@ Pour ajouter un dépôt : une entrée dans `depots.json`, la même clé dans la 
 ## Mise en place (une fois)
 
 1. **Jeton GitHub** : GitHub > Settings > Developer settings > Fine-grained tokens > Generate new
-   token. Repository access : agent-dev et les cinq dépôts du tableau. Permissions : **Contents**
+   token. Repository access : agent-dev et les dépôts du tableau. Permissions : **Contents**
    (Read and write), **Pull requests** (Read and write), **Actions** (Read and write).
 2. **Secrets de ce dépôt** (Settings > Secrets and variables > Actions) :
    - `DEV_GITHUB_TOKEN` : le jeton de l'étape 1 ;

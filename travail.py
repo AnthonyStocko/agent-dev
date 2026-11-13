@@ -217,6 +217,18 @@ def travailler(cle, demande, ident):
             raise Echec(f"git {args[0]} a échoué : {out[-300:]}")
         return out
 
+    identite = ["-c", "user.name=Agent développeur", "-c", "user.email=agent-developpeur@users.noreply.github.com"]
+    if sh(["git", "rev-parse", "--verify", "-q", "HEAD"], cwd=dossier)[0] != 0:
+        # Dépôt encore vide : un premier commit sur main sert de point de départ à la pull request
+        git("symbolic-ref", "HEAD", "refs/heads/main")
+        with open(os.path.join(dossier, "README.md"), "w", encoding="utf-8") as f:
+            f.write(f"# {depot.split('/')[-1]}\n")
+        git("add", "-A")
+        git(*identite, "commit", "-q", "-m", "Premier commit")
+        code, out = sh(["git", *auth, "push", "-q", distant, "HEAD:refs/heads/main"], cwd=dossier, timeout=600)
+        if code != 0:
+            raise Echec("Premier commit refusé sur le dépôt vide (le jeton couvre-t-il ce dépôt, avec "
+                        "« Contents : écriture » ?) : " + out[-300:].replace(token or "\0", "***"))
     base, branche_defaut = git("rev-parse", "HEAD"), git("rev-parse", "--abbrev-ref", "HEAD")
     with open(os.path.join(dossier, ".git", "info", "exclude"), "a", encoding="utf-8") as f:
         f.write("\n__pycache__/\n*.pyc\nnode_modules/\n.venv/\ndata.sqlite3\n")
@@ -262,8 +274,7 @@ def travailler(cle, demande, ident):
     branche = "dev/" + (re.sub(r"[^A-Za-z0-9._-]", "-", ident) or "demande")
     git("checkout", "-q", "-B", branche)
     fichiers_modifies()
-    git("-c", "user.name=Agent développeur", "-c", "user.email=agent-developpeur@users.noreply.github.com",
-        "commit", "-q", "-m", f"{titre}\n\nDemande : {demande[:1500]}")
+    git(*identite, "commit", "-q", "-m", f"{titre}\n\nDemande : {demande[:1500]}")
     sha = git("rev-parse", "HEAD")
     code, out = sh(["git", *auth, "push", "-q", "--force", distant, f"HEAD:refs/heads/{branche}"],
                    cwd=dossier, timeout=600)

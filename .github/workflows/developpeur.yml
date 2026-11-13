@@ -16,6 +16,7 @@ on:
           - agent-manager
           - mon-guide-agent-instagram
           - Monguide
+          - agent-devops-perso
       demande:
         description: Ce qu'il faut améliorer ou corriger
         required: true
