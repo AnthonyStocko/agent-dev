@@ -14,7 +14,8 @@ Il ne tourne pas sur un serveur : chaque demande est une exécution du workflow 
 3. Les vérifications du dépôt sont lancées ; si elles échouent, Claude Code corrige (deux essais).
 4. Il pousse une branche `dev/<référence>` et ouvre une pull request. Si tout est vert, elle est
    fusionnée dans `main` et le déploiement habituel du dépôt suit, **sans relecture**.
-5. Il envoie son compte rendu à l'agent chef, qui l'affiche dans la discussion.
+5. Il envoie son compte rendu à l'agent chef, qui l'affiche dans la discussion. Le compte rendu est aussi
+   publié comme artefact `rapport` de l'exécution : si l'envoi échoue, l'agent chef vient l'y chercher.
 
 ## Dépôts et garde-fous
 

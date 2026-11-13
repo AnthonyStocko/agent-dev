@@ -54,3 +54,12 @@ jobs:
           AGENT_URL: ${{ secrets.AGENT_URL }}
           HUB_TOKEN: ${{ secrets.HUB_TOKEN }}
         run: python travail.py
+      # Le compte rendu reste disponible sur GitHub : l'agent chef vient le lire ici si l'envoi direct a échoué
+      - name: Publication du compte rendu
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapport
+          path: rapport.json
+          if-no-files-found: ignore
+          retention-days: 30

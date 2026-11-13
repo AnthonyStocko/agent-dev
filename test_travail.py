@@ -80,7 +80,9 @@ class TravailTest(unittest.TestCase):
         run(f"git clone -q --bare {source} {self.distant}", self.tmp)
         env = {"PATH": self.bin + os.pathsep + os.environ["PATH"], "DEV_REMOTE": self.distant,
                "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-test", "DEV_GITHUB_TOKEN": "ghp_secret",
-               "HUB_TOKEN": "hub-secret", "AGENT_URL": "", "DEV_OWNER": "x", "GITHUB_REPOSITORY": "x/agent-dev"}
+               "HUB_TOKEN": "hub-secret", "AGENT_URL": "", "DEV_OWNER": "x", "GITHUB_REPOSITORY": "x/agent-dev",
+               "DEV_RAPPORT_FICHIER": os.path.join(self.tmp, "rapport.json")}
+        self.fichier_rapport = env["DEV_RAPPORT_FICHIER"]
         for p in (mock.patch.dict(os.environ, env), mock.patch.object(travail, "CI_PAUSE", 0),
                   mock.patch.object(travail, "charger_depots", lambda: {"test": self.reglages})):
             p.start()
@@ -224,6 +226,8 @@ class TravailTest(unittest.TestCase):
             self.assertEqual(travail.main(), 0)
         rapport = envoi.call_args[0][0]
         self.assertEqual((rapport["id"], rapport["depot"], rapport["statut"]), ("abc", "test", "fusionne"))
+        with open(self.fichier_rapport, encoding="utf-8") as f:   # le même compte rendu, pour l'artefact
+            self.assertEqual(json.load(f), rapport)
         with mock.patch.dict(os.environ, {"DEPOT": "inconnu", "DEMANDE": "Une demande", "ID": "abc"}), \
                 mock.patch.object(travail, "envoyer_rapport") as envoi:
             self.assertEqual(travail.main(), 1)

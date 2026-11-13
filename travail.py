@@ -8,7 +8,8 @@ Lancé par le workflow GitHub Actions `developpeur.yml` de ce dépôt, déclench
   3. refuse le travail s'il touche un chemin interdit (workflows, principes…) ;
   4. lance les vérifications du dépôt ; en cas d'échec, Claude Code corrige (deux essais) ;
   5. pousse une branche `dev/<id>`, ouvre une pull request et la fusionne si tout est vert ;
-  6. envoie son compte rendu à l'agent chef.
+  6. envoie son compte rendu à l'agent chef, et le dépose dans `rapport.json` (artefact du workflow)
+     où l'agent chef vient le chercher si l'envoi n'est pas arrivé.
 
 Variables : DEPOT, DEMANDE, ID, DEV_GITHUB_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, AGENT_URL, HUB_TOKEN.
 Réglages de `depots.json` par dépôt : installation, verifications, interdits (travail refusé),
@@ -358,6 +359,13 @@ def main():
     if os.getenv("GITHUB_RUN_ID"):
         rapport["run_url"] = (f"{os.getenv('GITHUB_SERVER_URL', 'https://github.com')}/"
                               f"{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.environ['GITHUB_RUN_ID']}")
+    # Le compte rendu est aussi déposé dans un fichier, publié par le workflow comme artefact « rapport » :
+    # l'agent chef vient l'y chercher si l'envoi direct ci-dessous n'arrive pas (agent endormi, accès refusé).
+    try:
+        with open(os.getenv("DEV_RAPPORT_FICHIER") or "rapport.json", "w", encoding="utf-8") as f:
+            json.dump(rapport, f, ensure_ascii=False)
+    except OSError as e:
+        print(f"Compte rendu non écrit dans le fichier : {e}", flush=True)
     envoyer_rapport(rapport)
     return 0 if rapport["statut"] in ("fusionne", "a_relire", "sans_modification") else 1
 
