@@ -33,14 +33,26 @@ Réglés dans `depots.json` :
 - Vérifications en échec : la pull request reste ouverte, préfixée « [tests en échec] », rien n'est fusionné.
 - agent-emploi n'a pas encore de tests : « vert » y veut seulement dire que le code compile et que
   le serveur démarre. L'agent a pour consigne d'ajouter des tests à chaque modification.
-- Cet agent ne se modifie pas lui-même : agent-dev n'est pas dans la liste.
+- Cet agent ne se modifie pas lui-même : agent-dev est refusé même s'il est ajouté à la liste.
 - Un dépôt encore vide reçoit d'abord un premier commit sur `main` (un README d'une ligne), puis la
   demande est traitée comme les autres.
 - Une seule demande à la fois par dépôt ; les suivantes attendent.
 - Claude Code ne reçoit ni le jeton GitHub ni `HUB_TOKEN` : il ne peut ni pousser ni fusionner lui-même.
 
-Pour ajouter un dépôt : une entrée dans `depots.json`, la même clé dans la liste `options` de
-`.github/workflows/developpeur.yml`, et l'accès du jeton GitHub à ce dépôt.
+### Ajouter un dépôt
+
+Une entrée dans `depots.json` suffit, puis l'accès du jeton GitHub à ce dépôt :
+
+```json
+"agent-nouveau": { "depot": "AnthonyStocko/agent-nouveau", "nom": "Agent nouveau" }
+```
+
+Seuls `depot` et `nom` sont obligatoires. Sans autre réglage, le dépôt est traité comme du code
+Python : compilation, tests `test_*.py` s'il y en a, démarrage du serveur s'il y a un `app.py`.
+
+Trois garde-fous ne dépendent pas de ce qui est écrit dans la liste : le dépôt doit appartenir au
+même compte GitHub que agent-dev, agent-dev lui-même est toujours refusé, et `.github/` est toujours
+interdit.
 
 ## Mise en place (une fois)
 
@@ -58,7 +70,8 @@ Facultatif : variable de dépôt `CLAUDE_CLI_MODEL` pour choisir le modèle de C
 
 ## Lancer une demande sans l'agent chef
 
-Onglet Actions > Agent développeur > Run workflow : choisis le dépôt et écris la demande. Le compte
+Onglet Actions > Agent développeur > Run workflow : écris la clé du dépôt (par exemple `agent-emploi`)
+et la demande. Le compte
 rendu est dans le résumé de l'exécution (et envoyé à l'agent chef si `AGENT_URL` est défini).
 
 ## Fichiers

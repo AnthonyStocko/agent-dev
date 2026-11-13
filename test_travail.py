@@ -80,7 +80,7 @@ class TravailTest(unittest.TestCase):
         run(f"git clone -q --bare {source} {self.distant}", self.tmp)
         env = {"PATH": self.bin + os.pathsep + os.environ["PATH"], "DEV_REMOTE": self.distant,
                "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-test", "DEV_GITHUB_TOKEN": "ghp_secret",
-               "HUB_TOKEN": "hub-secret", "AGENT_URL": ""}
+               "HUB_TOKEN": "hub-secret", "AGENT_URL": "", "DEV_OWNER": "x", "GITHUB_REPOSITORY": "x/agent-dev"}
         for p in (mock.patch.dict(os.environ, env), mock.patch.object(travail, "CI_PAUSE", 0),
                   mock.patch.object(travail, "charger_depots", lambda: {"test": self.reglages})):
             p.start()
@@ -251,11 +251,31 @@ class OutilsTest(unittest.TestCase):
                 self.assertIn(champ, r, f"{cle} : champ {champ} manquant")
             self.assertIn(".github/", r["interdits"], cle)
             self.assertTrue(r["verifications"], cle)
-        # La liste du workflow et celle des réglages doivent rester identiques
+            with mock.patch.dict(os.environ, {"DEV_OWNER": "", "GITHUB_REPOSITORY_OWNER": "AnthonyStocko",
+                                              "GITHUB_REPOSITORY": "AnthonyStocko/agent-dev"}):
+                self.assertEqual(travail.reglages_du_depot(cle)["depot"], r["depot"])
+        # Le workflow accepte toute clé : c'est depots.json qui fait foi, pas une liste écrite en dur
         with open(os.path.join(travail.ICI, ".github", "workflows", "developpeur.yml"), encoding="utf-8") as f:
-            workflow = f.read()
-        for cle in depots:
-            self.assertIn(f"          - {cle}\n", workflow)
+            self.assertNotIn("type: choice", f.read())
+
+    def test_depot_ajoute_sans_detail_recoit_les_reglages_par_defaut(self):
+        liste = {"nouveau": {"depot": "x/agent-nouveau", "nom": "Agent nouveau", "interdits": ["secrets/"]}}
+        with mock.patch.object(travail, "charger_depots", lambda: liste), \
+                mock.patch.dict(os.environ, {"DEV_OWNER": "x", "GITHUB_REPOSITORY": "x/agent-dev"}):
+            r = travail.reglages_du_depot("nouveau")
+        self.assertEqual(r["interdits"], [".github/", "secrets/"])
+        self.assertEqual(r["verifications"], travail.REGLAGES_DEFAUT["verifications"])
+        self.assertEqual((r["relecture"], r["attendre_ci"]), ([], False))
+
+    def test_depots_refuses(self):
+        liste = {"ailleurs": {"depot": "autre-compte/projet", "nom": "Ailleurs"},
+                 "soi": {"depot": "X/Agent-Dev", "nom": "Agent développeur"},
+                 "chemin": {"depot": "x/../autre", "nom": "Chemin"}, "vide": {}}
+        with mock.patch.object(travail, "charger_depots", lambda: liste), \
+                mock.patch.dict(os.environ, {"DEV_OWNER": "x", "GITHUB_REPOSITORY": "x/agent-dev"}):
+            for cle in ("ailleurs", "soi", "chemin", "vide", "absent"):
+                with self.assertRaises(travail.Echec, msg=cle):
+                    travail.reglages_du_depot(cle)
 
 
 if __name__ == "__main__":

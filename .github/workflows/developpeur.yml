@@ -7,16 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       depot:
-        description: Dépôt à modifier
+        description: Dépôt à modifier (une clé de depots.json, par exemple agent-emploi)
         required: true
-        type: choice
-        options:
-          - agent-emploi
-          - agent-perso
-          - agent-manager
-          - mon-guide-agent-instagram
-          - Monguide
-          - agent-devops-perso
+        type: string
       demande:
         description: Ce qu'il faut améliorer ou corriger
         required: true

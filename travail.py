@@ -12,7 +12,8 @@ Lancé par le workflow GitHub Actions `developpeur.yml` de ce dépôt, déclench
 
 Variables : DEPOT, DEMANDE, ID, DEV_GITHUB_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, AGENT_URL, HUB_TOKEN.
 Réglages de `depots.json` par dépôt : installation, verifications, interdits (travail refusé),
-relecture (pull request laissée ouverte), attendre_ci (attendre les workflows du dépôt).
+relecture (pull request laissée ouverte), attendre_ci (attendre les workflows du dépôt). Seuls `depot`
+et `nom` sont obligatoires : un dépôt ajouté sans détail reçoit les réglages par défaut.
 """
 import base64
 import json
@@ -53,6 +54,43 @@ class Echec(Exception):
 def charger_depots():
     with open(os.path.join(ICI, "depots.json"), encoding="utf-8") as f:
         return json.load(f)
+
+
+# Réglages d'un dépôt ajouté à depots.json sans détail : code Python, tests s'il y en a, serveur s'il y a app.py
+REGLAGES_DEFAUT = {
+    "installation": ["if [ -f requirements.txt ]; then pip install -q -r requirements.txt; fi"],
+    "verifications": [
+        "python -m compileall -q .",
+        "if ls test_*.py >/dev/null 2>&1; then python -m unittest discover -p 'test_*.py'; fi",
+        "if [ -f app.py ]; then python \"$DEV_OUTILS/demarrage.py\" 8796 python app.py 8796; fi",
+    ],
+    "interdits": [], "relecture": [], "attendre_ci": False,
+}
+
+
+def proprietaire():
+    """Compte GitHub dont les dépôts peuvent être modifiés : celui de ce dépôt."""
+    return os.getenv("DEV_OWNER") or os.getenv("GITHUB_REPOSITORY_OWNER") or "AnthonyStocko"
+
+
+def reglages_du_depot(cle):
+    """Réglages complets d'un dépôt de depots.json, garde-fous compris. Lève Echec s'il n'est pas autorisé.
+
+    La liste peut recevoir de nouveaux dépôts (par l'agent chef) : ces contrôles ne dépendent donc pas
+    de ce qui y est écrit. Le dépôt doit appartenir au même compte, ne peut pas être agent-dev lui-même,
+    et `.github/` reste toujours interdit.
+    """
+    entree = charger_depots().get(cle)
+    if not isinstance(entree, dict):
+        raise Echec(f"Dépôt inconnu : {cle}. Ajoute-le d'abord à depots.json.")
+    depot = str(entree.get("depot") or "")
+    if not re.fullmatch(re.escape(proprietaire()) + r"/[A-Za-z0-9._-]+", depot, re.I):
+        raise Echec(f"Dépôt refusé : {depot or cle} n'appartient pas au compte {proprietaire()}.")
+    if depot.lower() == (os.getenv("GITHUB_REPOSITORY") or f"{proprietaire()}/agent-dev").lower():
+        raise Echec("Dépôt refusé : l'agent développeur ne se modifie pas lui-même.")
+    reglages = {**REGLAGES_DEFAUT, **entree, "depot": depot, "nom": str(entree.get("nom") or cle)}
+    reglages["interdits"] = sorted({".github/", *reglages["interdits"]})
+    return reglages
 
 
 def sh(command, cwd=None, env=None, timeout=1800, stdin=None):
@@ -195,9 +233,7 @@ def envoyer_rapport(rapport):
 
 def travailler(cle, demande, ident):
     """Réalise la demande. Renvoie le rapport : statut, titre, resume, pr_url."""
-    reglages = charger_depots().get(cle)
-    if not reglages:
-        raise Echec(f"Dépôt inconnu : {cle}.")
+    reglages = reglages_du_depot(cle)
     depot, token = reglages["depot"], os.getenv("DEV_GITHUB_TOKEN") or ""
     distant = os.getenv("DEV_REMOTE") or f"https://github.com/{depot}.git"
     # Le jeton passe en en-tête à chaque commande git : il n'est jamais écrit dans le dépôt cloné
