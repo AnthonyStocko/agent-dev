@@ -23,9 +23,9 @@ Réglés dans `depots.json` :
 
 | Dépôt | Vérifications avant fusion | Jamais modifié | Pull request laissée à relire |
 |---|---|---|---|
-| agent-emploi | compilation, tests s'il y en a, démarrage du serveur | `.github/` | — |
+| agent-emploi | compilation, tests s'il y en a, démarrage du serveur | `.github/`, `CLAUDE.md` | — |
 | agent-perso | compilation, tous les tests `test_*.py` | `.github/`, `CLAUDE.md` | — |
-| agent-manager | compilation, tests s'il y en a, démarrage du serveur | `.github/` | — |
+| agent-manager | compilation, tests s'il y en a, démarrage du serveur | `.github/`, `CLAUDE.md` | — |
 | mon-guide-agent-instagram | `verifier-principes.mjs`, puis la CI du dépôt | `.github/`, `CLAUDE.md`, `PRINCIPES.md`, `verifier-principes.mjs` | migrations Supabase |
 | Monguide | `npm test`, puis les workflows du dépôt | `.github/` | migrations et rollbacks Supabase |
 | agent-devops-perso | compilation, tests s'il y en a, démarrage du serveur s'il y a un `app.py` | `.github/`, `CLAUDE.md` | — |

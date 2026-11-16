@@ -12,7 +12,8 @@
       "python \"$DEV_OUTILS/demarrage.py\" 8799 python app.py 8799"
     ],
     "interdits": [
-      ".github/"
+      ".github/",
+      "CLAUDE.md"
     ],
     "relecture": [],
     "attendre_ci": false
@@ -47,7 +48,8 @@
       "python \"$DEV_OUTILS/demarrage.py\" 8798 python app.py 8798"
     ],
     "interdits": [
-      ".github/"
+      ".github/",
+      "CLAUDE.md"
     ],
     "relecture": [],
     "attendre_ci": false
