@@ -28,7 +28,8 @@
       "python -m unittest discover -p 'test_*.py'"
     ],
     "interdits": [
-      ".github/"
+      ".github/",
+      "CLAUDE.md"
     ],
     "relecture": [],
     "attendre_ci": false
