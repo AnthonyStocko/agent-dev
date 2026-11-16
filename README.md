@@ -28,7 +28,7 @@ Réglés dans `depots.json` :
 | agent-manager | compilation, tests s'il y en a, démarrage du serveur | `.github/` | — |
 | mon-guide-agent-instagram | `verifier-principes.mjs`, puis la CI du dépôt | `.github/`, `CLAUDE.md`, `PRINCIPES.md`, `verifier-principes.mjs` | migrations Supabase |
 | Monguide | `npm test`, puis les workflows du dépôt | `.github/` | migrations et rollbacks Supabase |
-| agent-devops-perso | compilation, tests s'il y en a, démarrage du serveur s'il y a un `app.py` | `.github/` | — |
+| agent-devops-perso | compilation, tests s'il y en a, démarrage du serveur s'il y a un `app.py` | `.github/`, `CLAUDE.md` | — |
 
 - Un travail qui touche un chemin « jamais modifié » est rejeté en entier : rien n'est poussé.
 - Vérifications en échec : la pull request reste ouverte, préfixée « [tests en échec] », rien n'est fusionné.
