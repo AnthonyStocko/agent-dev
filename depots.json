@@ -100,7 +100,8 @@
       "if [ -f app.py ]; then python \"$DEV_OUTILS/demarrage.py\" 8796 python app.py 8796; fi"
     ],
     "interdits": [
-      ".github/"
+      ".github/",
+      "CLAUDE.md"
     ],
     "relecture": [],
     "attendre_ci": false
