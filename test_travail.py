@@ -3,12 +3,15 @@
 Claude Code et la commande `gh` sont remplacés par de faux programmes ; le dépôt visé est un dépôt
 git local. Lancement : python -m unittest test_travail -v
 """
+import io
 import json
 import os
 import stat
 import subprocess
 import tempfile
 import unittest
+import urllib.error
+from contextlib import redirect_stdout
 from unittest import mock
 
 import travail
@@ -232,6 +235,64 @@ class TravailTest(unittest.TestCase):
                 mock.patch.object(travail, "envoyer_rapport") as envoi:
             self.assertEqual(travail.main(), 1)
         self.assertEqual(envoi.call_args[0][0]["statut"], "erreur")
+
+
+class ContexteTest(unittest.TestCase):
+    """Contexte demandé à l'agent chef : dans la consigne de Claude seulement, jamais dans le journal."""
+
+    setUp, scenario, ci, journal = TravailTest.setUp, TravailTest.scenario, TravailTest.ci, TravailTest.journal
+
+    def servir(self, reponse=None, erreur=None):
+        vus = []
+
+        class Rep:
+            def __init__(s, corps): s.corps = corps
+            def __enter__(s): return s
+            def __exit__(s, *a): pass
+            def read(s): return s.corps
+
+        def faux(req, timeout=0):
+            vus.append((req.full_url, req.get_header("Authorization")))
+            if erreur:
+                raise erreur
+            return Rep(json.dumps(reponse).encode())
+        p = mock.patch.object(travail.urllib.request, "urlopen", faux)
+        p.start()
+        self.addCleanup(p.stop)
+        return vus
+
+    def test_contexte_dans_la_consigne_seulement(self):
+        vus = self.servir({"texte": "- 2026-11-18 [fusionnée] Ajout du filtre d'alertes\nDÉCISION SECRÈTE"})
+        self.scenario({"write": {"app.txt": "x"}, "result": "ok\nTITRE: t"})
+        sortie = io.StringIO()
+        with mock.patch.dict(os.environ, {"AGENT_URL": "https://chef.example/"}), redirect_stdout(sortie):
+            travail.travailler("test", "Une demande assez longue", "abc")
+        self.assertEqual(vus, [("https://chef.example/agent/dev/contexte?depot=test&id=abc", "Bearer hub-secret")])
+        prompt = self.journal("appels.jsonl")[0]["prompt"]
+        self.assertIn("CE QUI A DÉJÀ ÉTÉ FAIT OU DÉCIDÉ", prompt)
+        self.assertIn("DÉCISION SECRÈTE", prompt)
+        self.assertIn("ne les recopies pas dans ton compte rendu", prompt)
+        self.assertNotIn("DÉCISION SECRÈTE", sortie.getvalue())   # rien dans le journal public du run
+
+    def test_sans_agent_chef_le_travail_continue(self):
+        vus = self.servir(erreur=urllib.error.URLError("dort"))
+        sortie = io.StringIO()
+        with mock.patch.dict(os.environ, {"AGENT_URL": "https://chef.example"}), redirect_stdout(sortie):
+            self.assertEqual(travail.contexte_chef("test", "abc"), "")
+        self.assertEqual(len(vus), 2)
+        self.assertIn("travail sans contexte", sortie.getvalue())
+        self.assertNotIn("hub-secret", sortie.getvalue())
+        self.assertEqual(travail.contexte_chef("test", "abc"), "")   # AGENT_URL vide : aucun appel
+        self.assertEqual(len(vus), 2)
+
+    def test_consigne_sans_contexte_inchangee(self):
+        avec = travail.consigne(self.reglages, "Demande", "   ")
+        self.assertNotIn("CE QUI A DÉJÀ ÉTÉ FAIT", avec)
+        self.assertNotIn("{contexte}", avec)
+        self.assertIn("Demande", avec)
+        tronque = self.servir({"texte": "x" * 9000})
+        with mock.patch.dict(os.environ, {"AGENT_URL": "https://chef.example"}):
+            self.assertEqual(len(travail.contexte_chef("test", "abc")), travail.CONTEXTE_MAX)
 
 
 class OutilsTest(unittest.TestCase):

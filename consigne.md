@@ -4,10 +4,13 @@ fais la demande ci-dessous du mieux possible, de bout en bout.
 
 DEMANDE :
 {demande}
-
+{contexte}
 Comment travailler :
 - Commence par lire le README et, s'ils existent, CLAUDE.md et les fichiers de principes du dépôt :
   leurs règles s'imposent à toi. Lis ensuite le code concerné avant de le modifier.
+- Tiens compte de ce qui a déjà été fait ou décidé sur ce dépôt, s'il est indiqué plus haut : ne refais
+  pas une modification déjà fusionnée, ne contourne pas la raison d'un refus précédent, et signale dans
+  ton compte rendu si la demande contredit une décision.
 - Fais la modification demandée, complètement, sans élargir le périmètre : pas de refonte ni de
   nettoyage qui n'a pas été demandé. Garde le style du code en place (noms, commentaires en français).
 - Ajoute ou adapte les tests qui couvrent ce que tu changes, et mets à jour le README si le

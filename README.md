@@ -10,11 +10,18 @@ Il ne tourne pas sur un serveur : chaque demande est une exécution du workflow 
 ## Ce qu'il fait d'une demande
 
 1. Il clone le dépôt visé et installe ses dépendances.
-2. Claude Code (ton abonnement) lit le code et fait la modification, tests compris.
-3. Les vérifications du dépôt sont lancées ; si elles échouent, Claude Code corrige (deux essais).
-4. Il pousse une branche `dev/<référence>` et ouvre une pull request. Si tout est vert, elle est
+2. Il demande à l'agent chef ce qui a déjà été fait ou décidé sur ce dépôt (`GET /agent/dev/contexte`,
+   avec `HUB_TOKEN`) : les demandes précédentes et leur résultat, et les décisions techniques retenues
+   dans la mémoire. Ce contexte va **uniquement** dans la consigne de Claude Code : jamais dans les
+   paramètres du workflow, ni dans le journal ou le résumé du run, ni dans la pull request. Ce dépôt est
+   public, et tout cela s'y afficherait. Si l'agent chef ne répond pas, le travail continue sans contexte.
+3. Claude Code (ton abonnement) lit le code et fait la modification, tests compris, en tenant compte de
+   ce contexte : il ne refait pas ce qui a été fusionné et ne contourne pas un refus précédent.
+4. Les vérifications du dépôt sont lancées ; si elles échouent, Claude Code corrige (deux essais).
+5. Il pousse une branche `dev/<référence>` et ouvre une pull request. Si tout est vert, elle est
    fusionnée dans `main` et le déploiement habituel du dépôt suit, **sans relecture**.
-5. Il envoie son compte rendu à l'agent chef, qui l'affiche dans la discussion. Le compte rendu est aussi
+6. Il envoie son compte rendu à l'agent chef, qui l'affiche dans le fil Développement de la discussion
+   et en tire, s'il y a lieu, des décisions techniques pour sa mémoire. Le compte rendu est aussi
    publié comme artefact `rapport` de l'exécution : si l'envoi échoue, l'agent chef vient l'y chercher.
 
 ## Dépôts et garde-fous
