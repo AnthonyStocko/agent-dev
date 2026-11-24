@@ -18,9 +18,16 @@ Il ne tourne pas sur un serveur : chaque demande est une exécution du workflow 
 3. Claude Code (ton abonnement) lit le code et fait la modification, tests compris, en tenant compte de
    ce contexte : il ne refait pas ce qui a été fusionné et ne contourne pas un refus précédent.
 4. Les vérifications du dépôt sont lancées ; si elles échouent, Claude Code corrige (deux essais).
-5. Il pousse une branche `dev/<référence>` et ouvre une pull request. Si tout est vert, elle est
-   fusionnée dans `main` et le déploiement habituel du dépôt suit, **sans relecture**.
-6. Il envoie son compte rendu à l'agent chef, qui l'affiche dans le fil Développement de la discussion
+5. Il pousse une branche `dev/<référence>` et ouvre une pull request.
+6. Pour les dépôts qui ont leur propre CI (`attendre_ci`), il attend ses workflows. **S'ils échouent,
+   il corrige** : il récupère les journaux des jobs en échec, les donne à Claude Code, qui trouve la
+   cause et corrige ; la branche est repoussée, la pull request mise à jour, et la CI attendue de
+   nouveau (trois essais, réglables par la variable `DEV_TOURS_CI`). Si l'échec ne vient pas du code
+   (secret manquant dans GitHub, service externe en panne), Claude Code ne change rien et explique
+   quoi faire. Il sait aussi si le workflow échouait déjà sur `main` avant sa modification.
+7. Si tout est vert, la pull request est fusionnée dans `main` et le déploiement habituel du dépôt
+   suit, **sans relecture**.
+8. Il envoie son compte rendu à l'agent chef, qui l'affiche dans le fil Développement de la discussion
    et en tire, s'il y a lieu, des décisions techniques pour sa mémoire. Le compte rendu est aussi
    publié comme artefact `rapport` de l'exécution : si l'envoi échoue, l'agent chef vient l'y chercher.
 
@@ -39,6 +46,8 @@ Réglés dans `depots.json` :
 
 - Un travail qui touche un chemin « jamais modifié » est rejeté en entier : rien n'est poussé.
 - Vérifications en échec : la pull request reste ouverte, préfixée « [tests en échec] », rien n'est fusionné.
+- CI du dépôt encore rouge après trois corrections : la pull request reste ouverte, rien n'est fusionné.
+  Les journaux de la CI ne vont qu'à Claude Code, jamais dans le compte rendu (ce dépôt est public).
 - agent-emploi n'a pas encore de tests : « vert » y veut seulement dire que le code compile et que
   le serveur démarre. L'agent a pour consigne d'ajouter des tests à chaque modification.
 - Cet agent ne se modifie pas lui-même : agent-dev est refusé même s'il est ajouté à la liste.

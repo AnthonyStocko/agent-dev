@@ -18,6 +18,9 @@ Comment travailler :
 - Ta modification sera fusionnée et déployée automatiquement, sans relecture, si ces vérifications
   passent. Lance-les toi-même avant de terminer et corrige ce qui échoue :
 {verifications}
+- Si le dépôt a des workflows dans .github/workflows, ils seront aussi lancés sur ta pull request :
+  lis-les pour savoir ce qu'ils testent et fais en sorte que ta modification les passe. S'ils échouent,
+  on te renverra leurs journaux et tu devras corriger.
 - Ne modifie aucun de ces chemins, sinon tout ton travail est rejeté : {interdits}
 - N'écris jamais de secret, de jeton ni de mot de passe dans un fichier. N'ajoute une dépendance que
   si elle est indispensable.

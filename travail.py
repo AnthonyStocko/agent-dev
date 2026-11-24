@@ -7,8 +7,11 @@ Lancé par le workflow GitHub Actions `developpeur.yml` de ce dépôt, déclench
   2. confie la demande à Claude Code, qui lit et modifie le code (avec ton abonnement) ;
   3. refuse le travail s'il touche un chemin interdit (workflows, principes…) ;
   4. lance les vérifications du dépôt ; en cas d'échec, Claude Code corrige (deux essais) ;
-  5. pousse une branche `dev/<id>`, ouvre une pull request et la fusionne si tout est vert ;
-  6. envoie son compte rendu à l'agent chef, et le dépose dans `rapport.json` (artefact du workflow)
+  5. pousse une branche `dev/<id>` et ouvre une pull request ;
+  6. si le dépôt a sa propre CI (attendre_ci), l'attend ; si elle échoue, donne à Claude Code les journaux
+     des jobs en échec pour qu'il corrige, repousse et attend de nouveau (trois essais) ;
+  7. fusionne la pull request si tout est vert ;
+  8. envoie son compte rendu à l'agent chef, et le dépose dans `rapport.json` (artefact du workflow)
      où l'agent chef vient le chercher si l'envoi n'est pas arrivé.
 
 Variables : DEPOT, DEMANDE, ID, DEV_GITHUB_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, AGENT_URL, HUB_TOKEN.
@@ -31,6 +34,8 @@ import urllib.request
 
 ICI = os.path.dirname(os.path.abspath(__file__))
 TOURS_DE_CORRECTION = 2
+TOURS_CI = int(os.getenv("DEV_TOURS_CI", "3"))   # corrections après un échec de la CI du dépôt
+JOURNAL_CI_MAX = 6000                            # fin du journal gardée par job en échec
 CLAUDE_TIMEOUT = int(os.getenv("DEV_CLAUDE_TIMEOUT", "2400"))
 CI_TIMEOUT = int(os.getenv("DEV_CI_TIMEOUT", "1800"))
 CI_PAUSE = int(os.getenv("DEV_CI_PAUSE", "20"))
@@ -42,7 +47,7 @@ LIBELLES = {
     "fusionne": "Modification fusionnée dans main (le déploiement suit).",
     "a_relire": "Pull request ouverte : elle touche un chemin sensible, à relire et fusionner toi-même.",
     "tests_rouges": "Vérifications en échec : pull request ouverte, rien n'est fusionné.",
-    "ci_rouge": "Les tests du dépôt (CI) ont échoué : pull request ouverte, rien n'est fusionné.",
+    "ci_rouge": "Les tests du dépôt (CI) échouent encore après correction : pull request ouverte, rien n'est fusionné.",
     "sans_modification": "Aucune modification du code.",
     "refuse": "Travail refusé : il touche un chemin interdit. Rien n'a été poussé.",
     "erreur": "Le travail n'a pas abouti.",
@@ -215,8 +220,15 @@ def gh_api(method, path, body=None):
         return {}
 
 
+def gh_texte(path):
+    """Appel GET à l'API GitHub qui rend du texte brut (journal d'un job). Renvoie '' en cas d'échec."""
+    code, out = sh(["gh", "api", path], timeout=120,
+                   env={**os.environ, "GH_TOKEN": os.getenv("DEV_GITHUB_TOKEN") or ""})
+    return out if code == 0 else ""
+
+
 def attendre_ci(depot, sha):
-    """Attend les workflows du dépôt lancés sur ce commit. Renvoie (ok, détail)."""
+    """Attend les workflows du dépôt lancés sur ce commit. Renvoie (ok, détail, workflows en échec)."""
     debut, vus = time.time(), False
     while time.time() - debut < CI_TIMEOUT:
         runs = gh_api("GET", f"repos/{depot}/actions/runs?head_sha={sha}&per_page=50").get("workflow_runs") or []
@@ -225,13 +237,70 @@ def attendre_ci(depot, sha):
             if all(r.get("status") == "completed" for r in runs):
                 rates = [r for r in runs if r.get("conclusion") not in ("success", "skipped", "neutral")]
                 if not rates:
-                    return True, f"{len(runs)} workflow(s) du dépôt au vert."
+                    return True, f"{len(runs)} workflow(s) du dépôt au vert.", []
                 return False, "Workflows en échec :\n" + "\n".join(
-                    f"- {r.get('name')} ({r.get('conclusion')}) : {r.get('html_url')}" for r in rates)
+                    f"- {r.get('name')} ({r.get('conclusion')}) : {r.get('html_url')}" for r in rates), rates
         elif not vus and time.time() - debut > 4 * CI_PAUSE:
-            return True, "Aucun workflow du dépôt ne s'est lancé sur cette branche."
+            return True, "Aucun workflow du dépôt ne s'est lancé sur cette branche.", []
         time.sleep(CI_PAUSE)
-    return False, "Les workflows du dépôt n'ont pas terminé à temps."
+    return False, "Les workflows du dépôt n'ont pas terminé à temps.", []
+
+
+def nettoyer_journal(texte):
+    """Retire l'horodatage que GitHub met en tête de chaque ligne de journal."""
+    return re.sub(r"(?m)^\d{4}-\d\d-\d\dT[\d:.]+Z ", "", texte or "")
+
+
+def journal_ci(depot, rates):
+    """Journaux des jobs en échec, pour que Claude Code comprenne pourquoi la CI est rouge.
+
+    Ils ne vont que dans la consigne de Claude Code : jamais dans le compte rendu (public)."""
+    morceaux = []
+    for run in rates[:3]:
+        try:
+            jobs = gh_api("GET", f"repos/{depot}/actions/runs/{run.get('id')}/jobs?per_page=50").get("jobs") or []
+        except Echec:
+            jobs = []
+        for job in jobs:
+            if job.get("conclusion") not in ("failure", "timed_out", "cancelled", "startup_failure"):
+                continue
+            etapes = [e.get("name") for e in job.get("steps") or [] if e.get("conclusion") == "failure"]
+            journal = nettoyer_journal(gh_texte(f"repos/{depot}/actions/jobs/{job.get('id')}/logs"))
+            morceaux.append(f"### Workflow « {run.get('name')} », job « {job.get('name')} »"
+                            f" (étape en échec : {', '.join(etapes) or 'inconnue'})\n"
+                            + (journal[-JOURNAL_CI_MAX:] or "(journal indisponible)"))
+        if not jobs:
+            morceaux.append(f"### Workflow « {run.get('name')} » ({run.get('conclusion')}) : journal indisponible")
+    return "\n\n".join(morceaux)[-20000:] or "(aucun journal disponible)"
+
+
+def deja_rouges(depot, sha):
+    """Noms des workflows qui échouaient déjà sur le commit de départ (la branche principale)."""
+    try:
+        runs = gh_api("GET", f"repos/{depot}/actions/runs?head_sha={sha}&per_page=50").get("workflow_runs") or []
+    except Echec:
+        return []
+    return sorted({r.get("name") for r in runs
+                   if r.get("status") == "completed" and r.get("conclusion") in ("failure", "timed_out")})
+
+
+def consigne_ci(journaux, rouges_sur_main):
+    texte = ("Ta modification est poussée et la pull request est ouverte, mais les tests du dépôt (CI GitHub) "
+             "échouent dessus. Tu dois corriger. Voici la fin des journaux des jobs en échec.\n\n"
+             "Comment faire :\n"
+             "- Lis le workflow concerné dans .github/workflows (sans jamais le modifier) pour savoir ce qu'il "
+             "lance, puis reproduis l'échec en local si c'est possible.\n"
+             "- Corrige le code ou les tests que tu as écrits. N'affaiblis pas les tests existants et ne "
+             "contourne pas la vérification pour la faire passer.\n"
+             "- Relance les vérifications locales avant de terminer.\n"
+             "- Si l'échec ne vient pas du code (secret ou variable manquant dans GitHub, service externe "
+             "indisponible, quota), ne modifie rien et explique précisément ce qu'Anthony doit faire.\n"
+             "Redonne ensuite ton compte rendu complet et la ligne TITRE.\n")
+    if rouges_sur_main:
+        texte += ("\nÀ savoir : ces workflows échouaient déjà sur la branche principale, avant ta modification : "
+                  + ", ".join(rouges_sur_main) + ". Corrige quand même si la cause est dans le code et que la "
+                  "correction reste simple ; sinon explique-le.\n")
+    return texte + "\n" + journaux
 
 
 def envoyer_rapport(rapport):
@@ -318,52 +387,111 @@ def travailler(cle, demande, ident):
                 return False, f"$ {commande}\n{out[-5000:]}"
         return True, ""
 
-    texte, session = claude(consigne(reglages, demande, contexte_chef(cle, ident)), dossier)
-    titre, resume = titre_et_resume(texte, demande)
-    ok, journal, fichiers = True, "", []
-    for tour in range(TOURS_DE_CORRECTION + 1):
-        fichiers = fichiers_modifies()
-        if not fichiers:
-            return {"statut": "sans_modification", "titre": titre, "resume": resume}
-        interdits = chemins_touches(fichiers, reglages["interdits"])
-        if interdits:
-            return {"statut": "refuse", "titre": titre, "resume":
-                    "Chemins interdits modifiés : " + ", ".join(interdits) + "\n\n" + resume}
-        ok, journal = verifier()
-        if ok or tour == TOURS_DE_CORRECTION:
-            break
-        print(f"Vérifications en échec, correction n° {tour + 1}.", flush=True)
-        texte, session = claude("Les vérifications échouent après ta modification. Corrige le code (pas les "
-                                "vérifications), puis redonne ton compte rendu complet et la ligne TITRE.\n\n"
-                                + journal, dossier, session)
+    def etat_du_code():
+        """Empreinte de l'arbre de travail : elle change si Claude Code a modifié quelque chose."""
+        git("add", "-A")
+        return git("write-tree")
+
+    def verifier_et_corriger(texte, session):
+        """Contrôle les chemins et lance les vérifications ; Claude Code corrige en cas d'échec.
+
+        Renvoie un dict : arret (rapport si le travail s'arrête là), ok, journal, fichiers, titre, resume, session."""
         titre, resume = titre_et_resume(texte, demande)
+        ok, journal, fichiers = True, "", []
+        for tour in range(TOURS_DE_CORRECTION + 1):
+            fichiers = fichiers_modifies()
+            if not fichiers:
+                return {"arret": {"statut": "sans_modification", "titre": titre, "resume": resume}}
+            interdits = chemins_touches(fichiers, reglages["interdits"])
+            if interdits:
+                return {"arret": {"statut": "refuse", "titre": titre, "resume":
+                                  "Chemins interdits modifiés : " + ", ".join(interdits) + "\n\n" + resume}}
+            ok, journal = verifier()
+            if ok or tour == TOURS_DE_CORRECTION:
+                break
+            print(f"Vérifications en échec, correction n° {tour + 1}.", flush=True)
+            texte, session = claude("Les vérifications échouent après ta modification. Corrige le code (pas les "
+                                    "vérifications), puis redonne ton compte rendu complet et la ligne TITRE.\n\n"
+                                    + journal, dossier, session)
+            titre, resume = titre_et_resume(texte, demande)
+        return {"arret": None, "ok": ok, "journal": journal, "fichiers": fichiers, "titre": titre,
+                "resume": resume, "session": session}
 
     branche = "dev/" + (re.sub(r"[^A-Za-z0-9._-]", "-", ident) or "demande")
-    git("checkout", "-q", "-B", branche)
-    fichiers_modifies()
-    git(*identite, "commit", "-q", "-m", f"{titre}\n\nDemande : {demande[:1500]}")
-    sha = git("rev-parse", "HEAD")
-    code, out = sh(["git", *auth, "push", "-q", "--force", distant, f"HEAD:refs/heads/{branche}"],
-                   cwd=dossier, timeout=600)
-    if code != 0:
-        raise Echec("Envoi de la branche refusé (le jeton a-t-il le droit « Contents : écriture » ?) : "
-                    + out[-300:].replace(token or "\0", "***"))
-    corps = (f"**Demande**\n\n{demande}\n\n**Compte rendu de l'agent développeur**\n\n{resume}\n\n"
-             f"**Fichiers modifiés**\n\n" + "\n".join(f"- `{f}`" for f in fichiers))
-    if not ok:
-        corps += f"\n\n**Vérifications en échec**\n\n```\n{journal[-3000:]}\n```"
+
+    def pousser(titre):
+        """Un seul commit sur la branche dev/…, poussé (en remplaçant le précédent). Renvoie son sha."""
+        git("checkout", "-q", "-B", branche)
+        fichiers_modifies()
+        git(*identite, "commit", "-q", "-m", f"{titre}\n\nDemande : {demande[:1500]}")
+        code, out = sh(["git", *auth, "push", "-q", "--force", distant, f"HEAD:refs/heads/{branche}"],
+                       cwd=dossier, timeout=600)
+        if code != 0:
+            raise Echec("Envoi de la branche refusé (le jeton a-t-il le droit « Contents : écriture » ?) : "
+                        + out[-300:].replace(token or "\0", "***"))
+        return git("rev-parse", "HEAD")
+
+    def corps_pr(e, corrections_ci=0):
+        corps = (f"**Demande**\n\n{demande}\n\n**Compte rendu de l'agent développeur**\n\n{e['resume']}\n\n"
+                 f"**Fichiers modifiés**\n\n" + "\n".join(f"- `{f}`" for f in e["fichiers"]))
+        if corrections_ci:
+            corps += f"\n\n**Corrections après échec de la CI** : {corrections_ci}"
+        if not e["ok"]:
+            corps += f"\n\n**Vérifications en échec**\n\n```\n{e['journal'][-3000:]}\n```"
+        return corps[:60000]
+
+    texte, session = claude(consigne(reglages, demande, contexte_chef(cle, ident)), dossier)
+    e = verifier_et_corriger(texte, session)
+    if e["arret"]:
+        return e["arret"]
+    sha = pousser(e["titre"])
     pr = gh_api("POST", f"repos/{depot}/pulls", {
-        "title": titre if ok else "[tests en échec] " + titre, "head": branche, "base": branche_defaut,
-        "body": corps[:60000]})
-    rapport = {"titre": titre, "resume": resume, "pr_url": pr.get("html_url") or ""}
-    if not ok:
-        return {**rapport, "statut": "tests_rouges", "resume": resume + "\n\nDernière vérification en échec :\n"
-                + journal[-1500:]}
+        "title": e["titre"] if e["ok"] else "[tests en échec] " + e["titre"], "head": branche,
+        "base": branche_defaut, "body": corps_pr(e)})
+    rapport = {"titre": e["titre"], "resume": e["resume"], "pr_url": pr.get("html_url") or ""}
+    if not e["ok"]:
+        return {**rapport, "statut": "tests_rouges", "resume": e["resume"] + "\n\nDernière vérification en échec :\n"
+                + e["journal"][-1500:]}
     if reglages.get("attendre_ci"):
-        ci_ok, detail = attendre_ci(depot, sha)
-        rapport["resume"] += "\n\n" + detail
+        rouges_sur_main, corrections = None, 0
+        while True:
+            ci_ok, detail, rates = attendre_ci(depot, sha)
+            if ci_ok or not rates or corrections >= TOURS_CI:   # CI trop longue : rien à corriger
+                break
+            if rouges_sur_main is None:
+                rouges_sur_main = deja_rouges(depot, base)
+            corrections += 1
+            print(f"CI du dépôt en échec, correction n° {corrections}.", flush=True)
+            avant = etat_du_code()
+            texte, session = claude(consigne_ci(journal_ci(depot, rates), rouges_sur_main), dossier, e["session"])
+            if etat_du_code() == avant:
+                # Claude Code n'a rien changé : l'échec ne vient pas du code, ou il n'a pas trouvé
+                e["resume"] = titre_et_resume(texte, demande)[1] or e["resume"]
+                detail += "\n\nAucune correction possible dans le code après analyse des journaux de la CI."
+                break
+            suite = verifier_et_corriger(texte, session)
+            if suite["arret"]:
+                if suite["arret"]["statut"] == "refuse":
+                    return {**rapport, **suite["arret"]}
+                break
+            e = suite
+            sha = pousser(e["titre"])
+            titre_pr = e["titre"] if e["ok"] else "[tests en échec] " + e["titre"]
+            try:
+                gh_api("PATCH", f"repos/{depot}/pulls/{pr['number']}",
+                       {"title": titre_pr, "body": corps_pr(e, corrections)})
+            except Echec:
+                pass   # titre et description de la PR non mis à jour : sans gravité
+            rapport.update(titre=e["titre"], resume=e["resume"])
+            if not e["ok"]:
+                return {**rapport, "statut": "tests_rouges", "resume": e["resume"]
+                        + "\n\nDernière vérification en échec :\n" + e["journal"][-1500:]}
+        if corrections and ci_ok:
+            detail += f"\nCI corrigée en {corrections} tour(s)."
+        rapport["resume"] = e["resume"] + "\n\n" + detail
         if not ci_ok:
             return {**rapport, "statut": "ci_rouge"}
+    fichiers, titre = e["fichiers"], e["titre"]
     sensibles = chemins_touches(fichiers, reglages.get("relecture") or [])
     if sensibles:
         rapport["resume"] += "\n\nÀ relire avant fusion : " + ", ".join(sensibles)
