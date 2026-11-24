@@ -53,6 +53,7 @@ jobs:
           CLAUDE_CLI_MODEL: ${{ vars.CLAUDE_CLI_MODEL }}
           AGENT_URL: ${{ secrets.AGENT_URL }}
           HUB_TOKEN: ${{ secrets.HUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: python travail.py
       # Le compte rendu reste disponible sur GitHub : l'agent chef vient le lire ici si l'envoi direct a échoué
       - name: Publication du compte rendu
