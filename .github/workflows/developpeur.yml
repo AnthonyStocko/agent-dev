@@ -30,7 +30,7 @@ concurrency:
 jobs:
   travail:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 240   # jusqu'à trois corrections après un échec de la CI du dépôt
     steps:
       - uses: actions/checkout@v4
         with:

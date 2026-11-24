@@ -41,16 +41,29 @@ FAUX_GH = r'''#!/usr/bin/env python3
 import json, os, sys
 ici = os.path.dirname(os.path.abspath(__file__))
 args = sys.argv[1:]
-methode, chemin = args[2], args[3]
+methode, chemin = (args[2], args[3]) if "-X" in args else ("GET", args[1])
 corps = sys.stdin.read() if "--input" in args else ""
 with open(os.path.join(ici, "gh.jsonl"), "a") as f:
     f.write(json.dumps({"methode": methode, "chemin": chemin, "corps": json.loads(corps) if corps else None,
                         "jeton": os.environ.get("GH_TOKEN")}) + "\n")
 if methode == "POST" and chemin.endswith("/pulls"):
     print(json.dumps({"number": 7, "html_url": "https://github.com/x/y/pull/7"}))
+elif "/jobs?" in chemin:
+    print(json.dumps({"jobs": [{"id": 9, "name": "base-de-donnees", "conclusion": "failure",
+                                "steps": [{"name": "Migrations", "conclusion": "failure"}]}]}))
+elif chemin.endswith("/logs"):
+    print("2026-11-24T10:00:00.0000000Z ERREUR : colonne inconnue « ville »")
 elif "actions/runs" in chemin:
+    # ci.json : une réponse, ou une liste de réponses données à tour de rôle (la dernière reste)
     with open(os.path.join(ici, "ci.json")) as f:
-        print(f.read())
+        reponses = json.load(f)
+    if isinstance(reponses, list):
+        reponse = reponses.pop(0) if len(reponses) > 1 else reponses[0]
+        with open(os.path.join(ici, "ci.json"), "w") as f:
+            json.dump(reponses, f)
+    else:
+        reponse = reponses
+    print(json.dumps(reponse))
 else:
     print("{}")
 '''
@@ -185,11 +198,70 @@ class TravailTest(unittest.TestCase):
 
     def test_ci_du_depot_en_echec_bloque_la_fusion(self):
         self.reglages["attendre_ci"] = True
-        self.ci({"workflow_runs": [{"status": "completed", "conclusion": "failure", "name": "CI",
+        self.ci({"workflow_runs": [{"id": 1, "status": "completed", "conclusion": "failure", "name": "CI",
                                     "html_url": "https://github.com/x/y/actions/runs/1"}]})
-        self.scenario({"write": {"app.txt": "z"}, "result": "fait\nTITRE: t"})
+        # Claude Code analyse les journaux mais ne trouve rien à changer dans le code
+        self.scenario({"write": {"app.txt": "z"}, "result": "fait\nTITRE: t"},
+                      {"result": "Il manque le secret SUPABASE_URL dans GitHub.\nTITRE: t"})
         r = travail.travailler("test", "Change le salut de l'application", "abc")
         self.assertEqual(r["statut"], "ci_rouge")
+        self.assertIn("SUPABASE_URL", r["resume"])
+        self.assertNotIn("colonne inconnue", r["resume"])   # les journaux ne vont pas dans le compte rendu public
+        self.assertNotIn("PUT", [a["methode"] for a in self.journal("gh.jsonl")])
+        appels = self.journal("appels.jsonl")
+        self.assertEqual(len(appels), 2)
+        self.assertIn("--resume", appels[1]["args"])
+        self.assertIn("ERREUR : colonne inconnue « ville »", appels[1]["prompt"])
+        self.assertNotIn("2026-11-24T10:00", appels[1]["prompt"])
+        self.assertIn("base-de-donnees", appels[1]["prompt"])
+        self.assertIn("échouaient déjà sur la branche principale", appels[1]["prompt"])
+
+    def test_ci_rouge_corrigee_puis_fusionnee(self):
+        self.reglages["attendre_ci"] = True
+        rouge = {"workflow_runs": [{"id": 1, "status": "completed", "conclusion": "failure", "name": "CI",
+                                    "html_url": "https://github.com/x/y/actions/runs/1"}]}
+        vert = {"workflow_runs": [{"id": 2, "status": "completed", "conclusion": "success", "name": "CI"}]}
+        main_vert = {"workflow_runs": [{"id": 3, "status": "completed", "conclusion": "success", "name": "CI"}]}
+        self.ci([rouge, main_vert, vert])
+        self.scenario({"write": {"app.txt": "z"}, "result": "fait\nTITRE: Premier essai"},
+                      {"write": {"app.txt": "z corrigé"}, "result": "Colonne ajoutée.\nTITRE: Salut corrigé"})
+        r = travail.travailler("test", "Change le salut de l'application", "abc")
+        self.assertEqual(r["statut"], "fusionne")
+        self.assertEqual(r["titre"], "Salut corrigé")
+        self.assertIn("CI corrigée en 1 tour", r["resume"])
+        self.assertNotIn("échouaient déjà", self.journal("appels.jsonl")[1]["prompt"])
+        appels = [(a["methode"], a["chemin"].split("?")[0]) for a in self.journal("gh.jsonl")]
+        self.assertIn(("PATCH", "repos/x/y/pulls/7"), appels)
+        self.assertEqual(appels[-2][0], "PUT")
+        contenu = subprocess.run(["git", "show", "dev/abc:app.txt"], cwd=self.distant, capture_output=True,
+                                 text=True).stdout
+        self.assertEqual(contenu, "z corrigé")   # la correction est poussée sur la branche de la PR
+        merge = [a for a in self.journal("gh.jsonl") if a["methode"] == "PUT"][0]
+        self.assertEqual(merge["corps"]["commit_title"], "Salut corrigé")
+
+    def test_ci_toujours_rouge_apres_les_corrections(self):
+        self.reglages["attendre_ci"] = True
+        self.ci({"workflow_runs": [{"id": 1, "status": "completed", "conclusion": "failure", "name": "CI",
+                                    "html_url": "https://github.com/x/y/actions/runs/1"}]})
+        etapes = [{"write": {"app.txt": "essai 0"}, "result": "fait\nTITRE: t"}]
+        etapes += [{"write": {"app.txt": f"essai {i}"}, "result": f"essai {i}\nTITRE: t"}
+                   for i in range(1, travail.TOURS_CI + 1)]
+        self.scenario(*etapes)
+        r = travail.travailler("test", "Change le salut de l'application", "abc")
+        self.assertEqual(r["statut"], "ci_rouge")
+        self.assertEqual(len(self.journal("appels.jsonl")), 1 + travail.TOURS_CI)
+        self.assertNotIn("PUT", [a["methode"] for a in self.journal("gh.jsonl")])
+        contenu = subprocess.run(["git", "show", "dev/abc:app.txt"], cwd=self.distant, capture_output=True,
+                                 text=True).stdout
+        self.assertEqual(contenu, f"essai {travail.TOURS_CI}")   # la dernière correction est poussée
+
+    def test_correction_ci_qui_touche_un_chemin_interdit_est_refusee(self):
+        self.reglages["attendre_ci"] = True
+        self.ci({"workflow_runs": [{"id": 1, "status": "completed", "conclusion": "failure", "name": "CI"}]})
+        self.scenario({"write": {"app.txt": "z"}, "result": "fait\nTITRE: t"},
+                      {"write": {".github/workflows/ci.yml": "désactivé"}, "result": "CI coupée\nTITRE: t"})
+        r = travail.travailler("test", "Change le salut de l'application", "abc")
+        self.assertEqual(r["statut"], "refuse")
         self.assertNotIn("PUT", [a["methode"] for a in self.journal("gh.jsonl")])
 
     def test_ci_du_depot_au_vert_fusionne(self):
