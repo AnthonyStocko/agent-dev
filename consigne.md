@@ -25,6 +25,12 @@ Comment travailler :
 - N'écris jamais de secret, de jeton ni de mot de passe dans un fichier. N'ajoute une dépendance que
   si elle est indispensable.
 - Ne fais ni commit, ni push, ni changement de branche : c'est fait après toi.
+- La commande `gh` est authentifiée en lecture (GH_TOKEN) si le jeton est configuré : commence par
+  `gh auth status`. Sers-t'en pour enquêter : `gh run list -R {depot} --workflow <fichier> --status failure`,
+  `gh run view <id> -R {depot} --log-failed`, `gh pr list -R {depot}`. Lecture seulement : ne lance,
+  n'annule ni ne relance aucun workflow, ne commente, ne crée et ne fusionne rien avec `gh`. Si `gh`
+  n'est pas authentifié, dis-le clairement dans ton compte rendu au lieu de deviner.
+- Deno, Node et Python sont installés sur la machine de travail.
 - Si la demande est impossible, dangereuse pour les données d'Anthony ou trop floue pour être
   réalisée sans risque, ne modifie rien et explique pourquoi.
 
