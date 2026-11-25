@@ -54,7 +54,10 @@ Réglés dans `depots.json` :
 - Un dépôt encore vide reçoit d'abord un premier commit sur `main` (un README d'une ligne), puis la
   demande est traitée comme les autres.
 - Une seule demande à la fois par dépôt ; les suivantes attendent.
-- Claude Code ne reçoit ni le jeton GitHub ni `HUB_TOKEN` : il ne peut ni pousser ni fusionner lui-même.
+- Claude Code ne reçoit ni le jeton d'écriture `DEV_GITHUB_TOKEN` ni `HUB_TOKEN` : il ne peut ni pousser
+  ni fusionner lui-même. Il reçoit seulement `GH_TOKEN`, un jeton **en lecture**, pour que `gh` lui
+  montre les runs Actions, leurs journaux et les pull requests quand il enquête sur une panne
+  (s'il vaut la même chose que `DEV_GITHUB_TOKEN`, il n'est pas transmis). Deno est installé.
 
 ### Ajouter un dépôt
 
@@ -80,7 +83,10 @@ interdit.
    - `DEV_GITHUB_TOKEN` : le jeton de l'étape 1 ;
    - `CLAUDE_CODE_OAUTH_TOKEN` : le jeton d'abonnement de tes autres agents (`claude setup-token`) ;
    - `AGENT_URL` : l'adresse de l'agent chef (`https://….onrender.com`) ;
-   - `HUB_TOKEN` : la même valeur que dans l'agent chef.
+   - `HUB_TOKEN` : la même valeur que dans l'agent chef ;
+   - `GH_TOKEN` (conseillé) : un **second** jeton fine-grained, en lecture seule (Contents, Pull
+     requests, Actions, Metadata : Read-only) sur les mêmes dépôts. C'est le seul que Claude Code
+     reçoit, pour lire les runs et journaux Actions avec `gh`.
 3. **Agent chef** (Render, service agent-manager) : variable `DEV_GITHUB_TOKEN` avec le même jeton.
 
 Facultatif : variable de dépôt `CLAUDE_CLI_MODEL` pour choisir le modèle de Claude Code.

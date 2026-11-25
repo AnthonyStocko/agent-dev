@@ -141,6 +141,21 @@ class TravailTest(unittest.TestCase):
         self.assertEqual(appels[1]["corps"]["merge_method"], "squash")
         self.assertEqual(appels[0]["jeton"], "ghp_secret")
 
+    def test_claude_recoit_le_jeton_de_lecture_github(self):
+        self.scenario({"write": {"app.txt": "x"}, "result": "ok\nTITRE: t"})
+        with mock.patch.dict(os.environ, {"GH_TOKEN": "ghp_lecture"}):
+            travail.travailler("test", "Une demande assez longue", "abc")
+        appel = self.journal("appels.jsonl")[0]
+        self.assertIn("GH_TOKEN", appel["env"])
+        self.assertNotIn("DEV_GITHUB_TOKEN", appel["env"])
+        self.assertIn("gh auth status", appel["prompt"])
+
+    def test_claude_ne_recoit_jamais_le_jeton_d_ecriture_dans_gh_token(self):
+        self.scenario({"write": {"app.txt": "x"}, "result": "ok\nTITRE: t"})
+        with mock.patch.dict(os.environ, {"GH_TOKEN": os.environ["DEV_GITHUB_TOKEN"]}):
+            travail.travailler("test", "Une demande assez longue", "abc")
+        self.assertNotIn("GH_TOKEN", self.journal("appels.jsonl")[0]["env"])
+
     def test_claude_ne_voit_ni_jeton_github_ni_hub_token(self):
         self.scenario({"write": {"app.txt": "x"}, "result": "ok\nTITRE: t"})
         travail.travailler("test", "Une demande assez longue", "abc")

@@ -14,7 +14,8 @@ Lancé par le workflow GitHub Actions `developpeur.yml` de ce dépôt, déclench
   8. envoie son compte rendu à l'agent chef, et le dépose dans `rapport.json` (artefact du workflow)
      où l'agent chef vient le chercher si l'envoi n'est pas arrivé.
 
-Variables : DEPOT, DEMANDE, ID, DEV_GITHUB_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, AGENT_URL, HUB_TOKEN.
+Variables : DEPOT, DEMANDE, ID, DEV_GITHUB_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, AGENT_URL, HUB_TOKEN, et GH_TOKEN
+(jeton GitHub en lecture, le seul que Claude Code reçoit, pour lire les runs Actions et les pull requests).
 Réglages de `depots.json` par dépôt : installation, verifications, interdits (travail refusé),
 relecture (pull request laissée ouverte), attendre_ci (attendre les workflows du dépôt). Seuls `depot`
 et `nom` sont obligatoires : un dépôt ajouté sans détail reçoit les réglages par défaut.
@@ -39,8 +40,11 @@ JOURNAL_CI_MAX = 6000                            # fin du journal gardée par jo
 CLAUDE_TIMEOUT = int(os.getenv("DEV_CLAUDE_TIMEOUT", "2400"))
 CI_TIMEOUT = int(os.getenv("DEV_CI_TIMEOUT", "1800"))
 CI_PAUSE = int(os.getenv("DEV_CI_PAUSE", "20"))
-# Claude Code ne reçoit que ces variables : ni le jeton GitHub ni HUB_TOKEN ne lui sont transmis
+# Claude Code ne reçoit que ces variables. GH_TOKEN est un jeton GitHub en lecture (secret distinct) pour
+# que `gh` lui montre les runs Actions, leurs journaux et les pull requests ; le jeton d'écriture
+# DEV_GITHUB_TOKEN et HUB_TOKEN ne lui sont jamais transmis : il ne peut ni pousser ni fusionner.
 ENV_CLAUDE = ["PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CLI_MODEL",
+              "GH_TOKEN", "DENO_DIR", "DENO_INSTALL_ROOT",
               "DEV_OUTILS", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY",
               "pythonLocation", "PIP_BREAK_SYSTEM_PACKAGES"]
 LIBELLES = {
@@ -185,6 +189,8 @@ def claude(prompt, cwd, session=None):
     if session:
         command += ["--resume", session]
     env = {k: os.environ[k] for k in ENV_CLAUDE if k in os.environ}
+    if env.get("GH_TOKEN") and env["GH_TOKEN"] == os.getenv("DEV_GITHUB_TOKEN"):
+        del env["GH_TOKEN"]   # jamais le jeton d'écriture, même recopié par erreur dans GH_TOKEN
     code, out = sh(command, cwd=cwd, env=env, timeout=CLAUDE_TIMEOUT, stdin=prompt)
     data = None
     for ligne in reversed(out.splitlines()):   # le JSON du résultat est la dernière ligne utile
